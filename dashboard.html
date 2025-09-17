@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accessible Data Visualization Dashboard</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- D3.js for data visualization -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom focus styles for better accessibility */
+        .keyboard-focusable:focus-visible {
+            outline: 3px solid #2563eb;
+            outline-offset: 2px;
+            border-radius: 6px;
+        }
+        .chart-tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 8px;
+            font: 12px sans-serif;
+            background: #27272a;
+            color: white;
+            border: 0px;
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .chart-container {
+            min-height: 450px;
+        }
+    </style>
+</head>
+<body class="h-full overflow-y-auto">
+    <div class="min-h-full flex flex-col">
+        <!-- Header -->
+        <header class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+                <h1 class="text-2xl font-bold leading-6 text-gray-900">Sales & Performance Dashboard</h1>
+                <p class="mt-1 text-sm text-gray-600">Use keyboard (Tab, Arrow Keys, Enter) or mouse to interact with filters.</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 py-10">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+                <!-- Filter Controls -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div>
+                            <label for="region-filter" class="block text-sm font-medium text-gray-700">Filter by Region</label>
+                            <select id="region-filter" name="region-filter" class="keyboard-focusable mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                                <!-- Options will be populated by D3 -->
+                            </select>
+                        </div>
+                        <div>
+                            <label for="category-filter" class="block text-sm font-medium text-gray-700">Filter by Product Category</label>
+                            <select id="category-filter" name="category-filter" class="keyboard-focusable mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                                <!-- Options will be populated by D3 -->
+                            </select>
+                        </div>
+                        <div>
+                            <label for="sales-filter" class="block text-sm font-medium text-gray-700">Minimum Sales</label>
+                            <div class="flex items-center space-x-3 mt-1">
+                                <input id="sales-filter" type="range" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer keyboard-focusable" />
+                                <span id="sales-filter-value" class="text-sm text-gray-700 font-medium w-16 text-right"></span>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="reset-button" class="block text-sm font-medium text-gray-700 opacity-0">Reset</label>
+                             <button id="reset-button" class="keyboard-focusable mt-1 w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                                Reset Filters
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dashboard Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    <!-- Bar Chart -->
+                    <div class="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm border border-gray-200 chart-container flex flex-col">
+                        <h2 class="text-lg font-semibold text-gray-800">Sales by Product Category</h2>
+                        <p id="bar-chart-status" class="sr-only" aria-live="polite"></p>
+                        <div id="bar-chart" class="flex-grow"></div>
+                    </div>
+                    <!-- Pie Chart -->
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-200 chart-container flex flex-col">
+                         <h2 class="text-lg font-semibold text-gray-800">Sales Distribution by Region</h2>
+                         <p id="pie-chart-status" class="sr-only" aria-live="polite"></p>
+                         <div id="pie-chart" class="flex-grow"></div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="chart-tooltip"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // --- 1. MOCK DATA ---
+            const salesData = [
+                { id: 1, region: 'North America', category: 'Electronics', sales: 1200 },
+                { id: 2, region: 'Europe', category: 'Electronics', sales: 950 },
+                { id: 3, region: 'Asia', category: 'Electronics', sales: 1500 },
+                { id: 4, region: 'North America', category: 'Apparel', sales: 800 },
+                { id: 5, region: 'Europe', category: 'Apparel', sales: 700 },
+                { id: 6, region: 'Asia', category: 'Apparel', sales: 1100 },
+                { id: 7, region: 'South America', category: 'Apparel', sales: 450 },
+                { id: 8, region: 'North America', category: 'Home Goods', sales: 600 },
+                { id: 9, region: 'Europe', category: 'Home Goods', sales: 500 },
+                { id: 10, region: 'Asia', category: 'Home Goods', sales: 750 },
+                { id: 11, region: 'Africa', category: 'Home Goods', sales: 250 },
+                { id: 12, region: 'North America', category: 'Books', sales: 300 },
+                { id: 13, region: 'Europe', category: 'Books', sales: 400 },
+            ];
+
+            // --- 2. SETUP & DIMENSIONS ---
+            const barChartContainer = d3.select("#bar-chart");
+            const pieChartContainer = d3.select("#pie-chart");
+            const tooltip = d3.select("#tooltip");
+
+            const margin = { top: 20, right: 20, bottom: 70, left: 60 };
+            
+            // Debounce function to limit resize event calls
+            function debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            }
+
+            function formatSalesValue(value) {
+                return `$${parseInt(value).toLocaleString()}`;
+            }
+            
+            // --- 3. POPULATE FILTERS ---
+            function populateFilters() {
+                const regions = ['All', ...new Set(salesData.map(d => d.region))];
+                const categories = ['All', ...new Set(salesData.map(d => d.category))];
+
+                d3.select('#region-filter').selectAll('option')
+                    .data(regions)
+                    .enter().append('option')
+                    .text(d => d)
+                    .attr('value', d => d);
+
+                d3.select('#category-filter').selectAll('option')
+                    .data(categories)
+                    .enter().append('option')
+                    .text(d => d)
+                    .attr('value', d => d);
+
+                // Setup sales filter
+                const salesSlider = d3.select('#sales-filter');
+                const salesValueDisplay = d3.select('#sales-filter-value');
+                const maxSales = d3.max(salesData, d => d.sales);
+
+                salesSlider.attr('min', 0)
+                    .attr('max', maxSales)
+                    .attr('step', 50)
+                    .property('value', 0);
+                
+                salesValueDisplay.text(formatSalesValue(salesSlider.property('value')));
+
+                salesSlider.on('input', function() {
+                    salesValueDisplay.text(formatSalesValue(this.value));
+                });
+            }
+
+            // --- 4. CHART DRAWING FUNCTIONS ---
+            
+            function drawBarChart(data) {
+                barChartContainer.selectAll("*").remove(); // Clear previous chart
+
+                const { width, height } = barChartContainer.node().getBoundingClientRect();
+                const chartWidth = width - margin.left - margin.right;
+                const chartHeight = height - margin.top - margin.bottom;
+
+                if (chartWidth <= 0 || chartHeight <= 0) return; // Don't draw if container is not visible
+
+                const svg = barChartContainer.append("svg")
+                    .attr("width", width)
+                    .attr("height", height)
+                    .attr("aria-labelledby", "bar-chart-title")
+                    .attr("role", "graphics-document")
+                    .append("g")
+                    .attr("transform", `translate(${margin.left},${margin.top})`);
+                
+                svg.append("title").attr("id", "bar-chart-title").text("Bar chart showing sales by product category.");
+
+                // Group data by category
+                const categorySales = d3.rollup(data, v => d3.sum(v, d => d.sales), d => d.category);
+                const processedData = Array.from(categorySales, ([key, value]) => ({ category: key, sales: value }))
+                                        .sort((a,b) => d3.descending(a.sales, b.sales));
+
+                const x = d3.scaleBand()
+                    .domain(processedData.map(d => d.category))
+                    .range([0, chartWidth])
+                    .padding(0.2);
+
+                const y = d3.scaleLinear()
+                    .domain([0, d3.max(processedData, d => d.sales) * 1.1 || 100])
+                    .range([chartHeight, 0]);
+
+                // Axes
+                svg.append("g")
+                    .attr("transform", `translate(0,${chartHeight})`)
+                    .call(d3.axisBottom(x))
+                    .selectAll("text")
+                    .attr("transform", "translate(-10,0)rotate(-45)")
+                    .style("text-anchor", "end");
+
+                svg.append("g").call(d3.axisLeft(y));
+                
+                 // Screen reader status update
+                d3.select("#bar-chart-status").text(`Bar chart updated. Now showing data for ${processedData.length} categories.`);
+
+                // Bars
+                svg.selectAll(".bar")
+                    .data(processedData)
+                    .enter().append("rect")
+                    .attr("class", "bar fill-indigo-500")
+                    .attr("x", d => x(d.category))
+                    .attr("width", x.bandwidth())
+                    .attr("y", d => y(0)) // Start from bottom for animation
+                    .attr("height", 0)
+                    .attr("aria-label", d => `${d.category} sales: ${d.sales.toLocaleString()}`)
+                    .on("mouseover", (event, d) => {
+                        tooltip.transition().duration(200).style("opacity", .9);
+                        tooltip.html(`<strong>${d.category}</strong><br/>Sales: $${d.sales.toLocaleString()}`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", () => {
+                        tooltip.transition().duration(500).style("opacity", 0);
+                    })
+                    .transition() // Animation
+                    .duration(800)
+                    .attr("y", d => y(d.sales))
+                    .attr("height", d => chartHeight - y(d.sales));
+            }
+
+            function drawPieChart(data) {
+                pieChartContainer.selectAll("*").remove();
+
+                const { width, height } = pieChartContainer.node().getBoundingClientRect();
+                const radius = Math.min(width, height) / 2 - 20;
+
+                if (width <= 0 || height <= 0) return;
+
+                const svg = pieChartContainer.append("svg")
+                    .attr("width", width)
+                    .attr("height", height)
+                     .attr("aria-labelledby", "pie-chart-title")
+                    .attr("role", "graphics-document")
+                    .append("g")
+                    .attr("transform", `translate(${width / 2},${height / 2})`);
+                
+                svg.append("title").attr("id", "pie-chart-title").text("Pie chart showing sales distribution by region.");
+
+                const regionSales = d3.rollup(data, v => d3.sum(v, d => d.sales), d => d.region);
+                const processedData = Array.from(regionSales, ([key, value]) => ({ region: key, sales: value }));
+
+                const color = d3.scaleOrdinal(d3.schemeTableau10)
+                    .domain(processedData.map(d => d.region));
+
+                const pie = d3.pie().value(d => d.sales);
+                const data_ready = pie(processedData);
+
+                const arc = d3.arc().innerRadius(0).outerRadius(radius);
+                
+                // Screen reader status update
+                const totalSales = d3.sum(processedData, d => d.sales);
+                d3.select("#pie-chart-status").text(`Pie chart updated. Total sales are ${totalSales.toLocaleString()}.`);
+
+                // Slices
+                svg.selectAll('slices')
+                    .data(data_ready)
+                    .enter().append('path')
+                    .attr('d', arc)
+                    .attr('fill', d => color(d.data.region))
+                    .attr("stroke", "white")
+                    .style("stroke-width", "2px")
+                    .attr("aria-label", d => `${d.data.region} sales: ${d.data.sales.toLocaleString()}`)
+                    .on("mouseover", (event, d) => {
+                        tooltip.transition().duration(200).style("opacity", .9);
+                        const percentage = (d.data.sales / totalSales * 100).toFixed(1);
+                        tooltip.html(`<strong>${d.data.region}</strong><br/>Sales: $${d.data.sales.toLocaleString()}<br/>(${percentage}%)`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", () => {
+                        tooltip.transition().duration(500).style("opacity", 0);
+                    })
+                    .transition()
+                    .duration(1000)
+                    .attrTween("d", function(d) {
+                        const i = d3.interpolate(d.startAngle, d.endAngle);
+                        return function(t) {
+                            d.endAngle = i(t);
+                            return arc(d);
+                        }
+                    });
+            }
+
+
+            // --- 5. UPDATE & FILTER LOGIC ---
+            function updateCharts() {
+                const selectedRegion = d3.select('#region-filter').property('value');
+                const selectedCategory = d3.select('#category-filter').property('value');
+                const minSales = +d3.select('#sales-filter').property('value');
+
+                let filteredData = salesData;
+
+                if (selectedRegion !== 'All') {
+                    filteredData = filteredData.filter(d => d.region === selectedRegion);
+                }
+                if (selectedCategory !== 'All') {
+                    filteredData = filteredData.filter(d => d.category === selectedCategory);
+                }
+
+                filteredData = filteredData.filter(d => d.sales >= minSales);
+                
+                if (filteredData.length === 0) {
+                    barChartContainer.html('<div class="text-center text-gray-500 p-8">No data available for the selected filters.</div>');
+                    pieChartContainer.html('<div class="text-center text-gray-500 p-8">No data available for the selected filters.</div>');
+                     d3.select("#bar-chart-status").text("No data to display.");
+                     d3.select("#pie-chart-status").text("No data to display.");
+                } else {
+                    drawBarChart(filteredData);
+                    drawPieChart(filteredData);
+                }
+            }
+            
+            // --- 6. EVENT LISTENERS ---
+            d3.select('#region-filter').on('change', updateCharts);
+            d3.select('#category-filter').on('change', updateCharts);
+            d3.select('#sales-filter').on('change', updateCharts);
+
+            d3.select('#reset-button').on('click', () => {
+                d3.select('#region-filter').property('value', 'All');
+                d3.select('#category-filter').property('value', 'All');
+
+                const salesSlider = d3.select('#sales-filter');
+                salesSlider.property('value', 0); // Reset to min
+                d3.select('#sales-filter-value').text(formatSalesValue(0)); // Update display
+
+                updateCharts();
+            });
+            
+            // Re-draw charts on window resize
+            window.addEventListener('resize', debounce(updateCharts, 250));
+
+            // --- 7. INITIALIZATION ---
+            populateFilters();
+            updateCharts(); // Initial draw
+        });
+    </script>
+</body>
+</html>

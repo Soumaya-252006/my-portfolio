@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accessible Notes PWA</title>
+    <meta name="description" content="A simple, accessible, and offline-first notes application with image support.">
+    <meta name="theme-color" content="#4f46e5">
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="data:application/manifest+json,{&quot;name&quot;:&quot;Accessible Notes PWA&quot;,&quot;short_name&quot;:&quot;Notes PWA&quot;,&quot;start_url&quot;:&quot;.&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;#f4f4f5&quot;,&quot;theme_color&quot;:&quot;#4f46e5&quot;,&quot;icons&quot;:[{&quot;src&quot;:&quot;https://placehold.co/192x192/4f46e5/ffffff?text=Notes&quot;,&quot;sizes&quot;:&quot;192x192&quot;,&quot;type&quot;:&quot;image/png&quot;},{&quot;src&quot;:&quot;https://placehold.co/512x512/4f46e5/ffffff?text=Notes&quot;,&quot;sizes&quot;:&quot;512x512&quot;,&quot;type&quot;:&quot;image/png&quot;}]}">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f4f5; /* Zinc 100 */
+        }
+        .focusable:focus-visible {
+            outline: 3px solid #6366f1; /* Indigo 500 */
+            outline-offset: 2px;
+            border-radius: 0.375rem;
+        }
+        .note-item.active {
+            background-color: #e0e7ff; /* Indigo 100 */
+            border-color: #6366f1; /* Indigo 500 */
+        }
+        .transition-all {
+            transition: all 0.2s ease-in-out;
+        }
+        /* Style for file input button */
+        .file-input-label {
+            cursor: pointer;
+        }
+        /* Offline indicator */
+        #offline-indicator {
+            transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="antialiased text-zinc-800">
+
+    <div id="app" class="flex flex-col h-screen">
+        <header class="bg-white border-b border-zinc-200 shadow-sm">
+            <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <h1 class="text-2xl font-bold text-indigo-600">Accessible Notes</h1>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 h-full">
+                
+                <aside class="md:col-span-1 lg:col-span-1 h-full flex flex-col">
+                    <button id="new-note-btn" class="focusable w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-all shadow-sm mb-4">
+                        + New Note
+                    </button>
+                    <div class="bg-white rounded-lg border border-zinc-200 flex-grow overflow-y-auto">
+                        <h2 id="notes-list-heading" class="text-lg font-semibold p-4 border-b border-zinc-200 sticky top-0 bg-white">My Notes</h2>
+                        <ul id="notes-list" aria-labelledby="notes-list-heading" class="divide-y divide-zinc-200">
+                           <li id="no-notes-message" class="p-4 text-center text-zinc-500">You have no notes yet.</li>
+                        </ul>
+                    </div>
+                </aside>
+
+                <section id="editor-container" aria-label="Note editor" class="md:col-span-2 lg:col-span-3 bg-white rounded-lg border border-zinc-200 shadow-sm flex flex-col">
+                    <div id="editor-placeholder" class="flex flex-col items-center justify-center h-full text-center p-8">
+                        <svg class="w-16 h-16 text-zinc-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
+                        <h2 class="mt-4 text-xl font-semibold text-zinc-600">Select a note to read or edit</h2>
+                        <p class="text-zinc-500 mt-1">Or create a new one to get started!</p>
+                    </div>
+
+                    <form id="note-editor" class="hidden h-full flex flex-col">
+                        <input type="hidden" id="note-id">
+                        <div class="p-4 border-b border-zinc-200">
+                            <label for="note-title" class="sr-only">Note Title</label>
+                            <input type="text" id="note-title" class="focusable w-full text-2xl font-bold p-2 -ml-2 rounded-lg" placeholder="My Awesome Note" required>
+                        </div>
+                        
+                        <!-- Image Section -->
+                        <div id="image-controls" class="p-4 border-b border-zinc-200">
+                            <div id="image-preview-container" class="hidden mb-4 relative">
+                                <!-- LAZY LOADING: loading="lazy" is added here -->
+                                <img id="image-preview" src="" alt="Note image preview" loading="lazy" class="max-h-60 w-full object-contain rounded-lg border border-zinc-200">
+                                <button type="button" id="remove-image-btn" aria-label="Remove image" class="focusable absolute top-2 right-2 bg-black bg-opacity-50 text-white rounded-full p-1 hover:bg-opacity-75">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            </div>
+                            <label for="image-upload" class="focusable file-input-label inline-block bg-zinc-100 text-zinc-700 font-semibold py-2 px-4 rounded-lg hover:bg-zinc-200 transition-all">Add Image</label>
+                            <input type="file" id="image-upload" class="sr-only" accept="image/*">
+                            <p class="text-xs text-zinc-500 mt-2">Note: Large images may impact performance. Local storage is limited (typically 5-10MB).</p>
+                        </div>
+
+                        <div class="p-4 flex-grow">
+                             <label for="note-body" class="sr-only">Note Body</label>
+                             <textarea id="note-body" class="focusable w-full h-full p-2 -ml-2 resize-none rounded-lg" placeholder="Start typing your note here..."></textarea>
+                        </div>
+                        <div class="p-4 bg-zinc-50 border-t border-zinc-200 flex items-center justify-end space-x-3">
+                           <button type="submit" id="save-note-btn" class="focusable bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700 transition-all">Save</button>
+                           <button type="button" id="delete-note-btn" class="focusable bg-red-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-red-700 transition-all">Delete</button>
+                        </div>
+                    </form>
+                </section>
+            </div>
+        </main>
+        
+        <div id="status-message" class="sr-only" role="status" aria-live="polite"></div>
+
+        <div id="offline-indicator" class="fixed bottom-4 right-4 bg-zinc-800 text-white py-2 px-4 rounded-lg shadow-lg opacity-0 transform translate-y-4 pointer-events-none">
+            You are currently offline.
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Service Worker Registration ---
+            const registerServiceWorker = () => {
+                if ('serviceWorker' in navigator) {
+                    const swContent = `
+                        const CACHE_NAME = 'notes-pwa-cache-v1';
+                        const urlsToCache = [
+                            '.',
+                            'https://cdn.tailwindcss.com',
+                            'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'
+                        ];
+
+                        self.addEventListener('install', event => {
+                            event.waitUntil(
+                                caches.open(CACHE_NAME)
+                                    .then(cache => {
+                                        console.log('Opened cache');
+                                        return cache.addAll(urlsToCache);
+                                    })
+                            );
+                        });
+
+                        self.addEventListener('fetch', event => {
+                            event.respondWith(
+                                caches.match(event.request)
+                                    .then(response => {
+                                        if (response) {
+                                            return response; // Serve from cache
+                                        }
+                                        return fetch(event.request).then(
+                                            networkResponse => {
+                                                if (!networkResponse || networkResponse.status !== 200 || (networkResponse.type !== 'basic' && networkResponse.type !== 'cors')) {
+                                                    return networkResponse;
+                                                }
+                                                const responseToCache = networkResponse.clone();
+                                                caches.open(CACHE_NAME)
+                                                    .then(cache => cache.put(event.request, responseToCache));
+                                                return networkResponse;
+                                            }
+                                        );
+                                    }
+                                ).catch(() => {
+                                    console.log('Fetch failed; user is likely offline.');
+                                })
+                            );
+                        });
+
+                        self.addEventListener('activate', event => {
+                            const cacheWhitelist = [CACHE_NAME];
+                            event.waitUntil(
+                                caches.keys().then(cacheNames => Promise.all(
+                                    cacheNames.map(cacheName => {
+                                        if (cacheWhitelist.indexOf(cacheName) === -1) {
+                                            return caches.delete(cacheName);
+                                        }
+                                    })
+                                ))
+                            );
+                        });
+                    `;
+                    const swBlob = new Blob([swContent], { type: 'application/javascript' });
+                    const swUrl = URL.createObjectURL(swBlob);
+
+                    navigator.serviceWorker.register(swUrl)
+                        .then(reg => console.log('ServiceWorker registration successful: ', reg.scope))
+                        .catch(err => console.log('ServiceWorker registration failed: ', err));
+                }
+            };
+            registerServiceWorker();
+
+            // DOM Elements
+            const notesList = document.getElementById('notes-list');
+            const newNoteBtn = document.getElementById('new-note-btn');
+            const editorPlaceholder = document.getElementById('editor-placeholder');
+            const noteEditor = document.getElementById('note-editor');
+            const noteIdInput = document.getElementById('note-id');
+            const noteTitleInput = document.getElementById('note-title');
+            const noteBodyInput = document.getElementById('note-body');
+            const deleteNoteBtn = document.getElementById('delete-note-btn');
+            const noNotesMessage = document.getElementById('no-notes-message');
+            const statusMessage = document.getElementById('status-message');
+            const imageUpload = document.getElementById('image-upload');
+            const imagePreviewContainer = document.getElementById('image-preview-container');
+            const imagePreview = document.getElementById('image-preview');
+            const removeImageBtn = document.getElementById('remove-image-btn');
+            const offlineIndicator = document.getElementById('offline-indicator');
+
+            // State
+            let notes = [];
+            let activeNoteId = null;
+
+            const loadNotes = () => JSON.parse(localStorage.getItem('accessible-notes-pwa') || '[]');
+            const saveNotes = () => localStorage.setItem('accessible-notes-pwa', JSON.stringify(notes));
+
+            const renderNoteList = () => {
+                notesList.innerHTML = '';
+                if (notes.length === 0) {
+                    noNotesMessage.classList.remove('hidden');
+                    return;
+                }
+                noNotesMessage.classList.add('hidden');
+                notes.sort((a, b) => b.updated - a.updated);
+                notes.forEach(note => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <button class="note-item w-full text-left p-4 focusable" data-id="${note.id}">
+                            <h3 class="font-semibold truncate">${note.title || 'Untitled Note'}</h3>
+                            <p class="text-sm text-zinc-500 truncate flex items-center">
+                                ${note.image ? `<svg class="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14"></path></svg>` : ''}
+                                ${note.body || 'No content'}
+                            </p>
+                        </button>
+                    `;
+                    if (note.id === activeNoteId) {
+                        li.querySelector('button').classList.add('active');
+                        li.querySelector('button').setAttribute('aria-current', 'true');
+                    }
+                    notesList.appendChild(li);
+                });
+            };
+
+            const renderEditor = () => {
+                const note = notes.find(n => n.id === activeNoteId);
+                if (note) {
+                    editorPlaceholder.classList.add('hidden');
+                    noteEditor.classList.remove('hidden');
+                    noteIdInput.value = note.id;
+                    noteTitleInput.value = note.title;
+                    noteBodyInput.value = note.body;
+                    if (note.image) {
+                        imagePreview.src = note.image;
+                        imagePreviewContainer.classList.remove('hidden');
+                    } else {
+                        imagePreview.src = '';
+                        imagePreviewContainer.classList.add('hidden');
+                    }
+                } else {
+                    editorPlaceholder.classList.remove('hidden');
+                    noteEditor.classList.add('hidden');
+                }
+            };
+
+            const announceStatus = (message) => {
+                statusMessage.textContent = message;
+            };
+
+            const handleNewNote = () => {
+                const newNote = { id: Date.now().toString(), title: '', body: '', updated: Date.now(), image: null };
+                notes.push(newNote);
+                activeNoteId = newNote.id;
+                renderNoteList();
+                renderEditor();
+                noteTitleInput.focus();
+                announceStatus('New note created.');
+            };
+
+            const handleSelectNote = (e) => {
+                const targetButton = e.target.closest('.note-item');
+                if (targetButton) {
+                    activeNoteId = targetButton.dataset.id;
+                    renderNoteList();
+                    renderEditor();
+                    noteTitleInput.focus();
+                }
+            };
+
+            const handleSaveNote = (e) => {
+                e.preventDefault();
+                const id = noteIdInput.value;
+                const title = noteTitleInput.value.trim();
+                const body = noteBodyInput.value.trim();
+                const noteIndex = notes.findIndex(n => n.id === id);
+                if (noteIndex > -1) {
+                    notes[noteIndex].title = title;
+                    notes[noteIndex].body = body;
+                    notes[noteIndex].updated = Date.now();
+                    saveNotes();
+                    renderNoteList();
+                    announceStatus('Note saved.');
+                }
+            };
+
+            const handleDeleteNote = () => {
+                if (!activeNoteId) return;
+                notes = notes.filter(note => note.id !== activeNoteId);
+                saveNotes();
+                announceStatus('Note deleted.');
+                activeNoteId = null;
+                renderNoteList();
+                renderEditor();
+                newNoteBtn.focus();
+            };
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file || !activeNoteId) return;
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const noteIndex = notes.findIndex(n => n.id === activeNoteId);
+                    if (noteIndex > -1) {
+                        notes[noteIndex].image = reader.result;
+                        imagePreview.src = reader.result;
+                        imagePreviewContainer.classList.remove('hidden');
+                        announceStatus('Image added to note.');
+                    }
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const handleRemoveImage = () => {
+                if (!activeNoteId) return;
+                const noteIndex = notes.findIndex(n => n.id === activeNoteId);
+                if (noteIndex > -1) {
+                    notes[noteIndex].image = null;
+                    imagePreview.src = '';
+                    imagePreviewContainer.classList.add('hidden');
+                    announceStatus('Image removed from note.');
+                }
+            };
+
+            const updateOnlineStatus = () => {
+                if (navigator.onLine) {
+                    offlineIndicator.classList.add('opacity-0', 'translate-y-4');
+                } else {
+                    offlineIndicator.classList.remove('opacity-0', 'translate-y-4');
+                }
+            };
+
+            // Init
+            newNoteBtn.addEventListener('click', handleNewNote);
+            notesList.addEventListener('click', handleSelectNote);
+            noteEditor.addEventListener('submit', handleSaveNote);
+            deleteNoteBtn.addEventListener('click', handleDeleteNote);
+            imageUpload.addEventListener('change', handleImageUpload);
+            removeImageBtn.addEventListener('click', handleRemoveImage);
+            window.addEventListener('online', updateOnlineStatus);
+            window.addEventListener('offline', updateOnlineStatus);
+            
+            notes = loadNotes();
+            renderNoteList();
+            renderEditor();
+            updateOnlineStatus();
+        });
+    </script>
+</body>
+</html>
